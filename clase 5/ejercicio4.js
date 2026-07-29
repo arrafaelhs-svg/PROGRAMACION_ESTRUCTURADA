@@ -15,9 +15,9 @@ rl.question("Ingrese el nombre del producto: ", (producto) => {
             const total = precio * cantidad;
 
             console.log(`Su producto es: ${producto}`);
-            console.log(`Su precio unitario es: ${precio}`);
+            console.log(`Su precio unitario es: ${precio}$`);
             console.log(`La cantidad comprada es: ${cantidad}`);
-            console.log(`Total a pagar: ${total}`);
+            console.log(`Total a pagar: ${total}$`);
 
             rl.close();
         });
