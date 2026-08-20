@@ -16,7 +16,7 @@ rl.question("Ingrese la primera nota: ", (nota1) => {
 
             const promedio = (nota1 + nota2 + nota3) / 3;
 
-            console.log(`El promedio que obtuvo es de: ${promedio}`);
+            console.log(`El promedio que obtuvo es de la grandiosa nota de : ${promedio}`);
 
             rl.close();
         });
