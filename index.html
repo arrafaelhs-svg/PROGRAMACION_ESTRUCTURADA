@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pixel Quest - Nivel 1</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">MOTOR WEB · NIVEL 1</p>
+        <h1>Pixel Quest</h1>
+      </div>
+      <div class="controls-hint">← → / A D mover · ESPACIO saltar · R reiniciar</div>
+    </header>
+
+    <section class="game-card">
+      <div class="hud" aria-label="Información de la partida">
+        <div><span>PUNTOS</span><strong id="score">000000</strong></div>
+        <div><span>MONEDAS</span><strong id="coins">00</strong></div>
+        <div><span>TIEMPO</span><strong id="time">180</strong></div>
+        <div><span>ESTADO</span><strong id="status">LISTO</strong></div>
+      </div>
+      <canvas id="game" width="960" height="540" aria-label="Videojuego Pixel Quest"></canvas>
+      <div id="message" class="message hidden"></div>
+    </section>
+
+    <footer><span>Objetivo: llega a la bandera antes de que se acabe el tiempo.</span><span id="power-status">Sin power-up</span></footer>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
