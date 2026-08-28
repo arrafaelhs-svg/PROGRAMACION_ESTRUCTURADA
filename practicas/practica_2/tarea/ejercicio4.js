@@ -12,7 +12,7 @@ let fecha = new Date();
 let anio = fecha.getFullYear();
 let mes = fecha.getMonth() + 1;
 let dia = fecha.getDate();
-jjj
+
 let hora = fecha.getHours();
 let minutos = fecha.getMinutes();
 let segundos = fecha.getSeconds();
