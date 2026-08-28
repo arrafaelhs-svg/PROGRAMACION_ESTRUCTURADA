@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Juego de Plataformas</title>
+  <style >
+
+body {
+      margin: 0;
+      background-color: #222;
+      color: white;
+      font-family: 'Courier New', Courier, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 20px;
+    }
+
+    #game-container {
+      position: relative;
+      width: 720px;
+      height: 500px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background-color: #69c9e8;
+    }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px black;
+      pointer-events: none;
+    }
+    #message {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      font-size: 32px;
+      font-weight: bold;
+    }
+    #message div {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #message small {
+      font-size: 16px;
+      color: #ccc;
+    }
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-container">
+    <div id="hud">
+      <div>PUNTOS: <span id="score">000000</span></div>
+      <div>MONEDAS: <span id="coins">00</span></div>
+      <div>TIEMPO: <span id="time">240</span></div>
+      <div id="power-status">Sin power-up</div>
+    </div>
+    <canvas id="game" width="720" height="500"></canvas>
+    <div id="message" class="hidden"></div>
+  </div>
+
+  <script>
+    const canvas = document.querySelector('#game');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    const W = canvas.width, H = canvas.height;
+    const keys = {};
+    let game, last = 0, animation;
+
+    addEventListener('keydown', e => {
+      keys[e.key.toLowerCase()] = true;
+      if (['arrowleft', 'arrowright', 'arrowup', ' '].includes(e.key.toLowerCase())) e.preventDefault();
+      if (e.key.toLowerCase() === 'r') reset();
+    });
+    addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+    const rect = (x, y, w, h, color) => { ctx.fillStyle = color; ctx.fillRect(Math.round(x), Math.round(y), w, h); };
+    const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+    function reset() {
+      game = {
+        running: true, won: false, score: 0, collectedCoins: 0, time: 240, camera: 0, elapsed: 0,
+        player: { x: 80, y: 390, w: 28, h: 40, vx: 0, vy: 0, grounded: false, big: false, star: 0 },
+        platforms: [
+          // Tramos de suelo (ahora con más agujeros)
+          [0, 500, 650, 40], [750, 500, 500, 40], [1350, 500, 400, 40], [1900, 500, 600, 40], 
+          [2650, 500, 500, 40], [3300, 500, 300, 40], [3800, 500, 400, 40], [4400, 500, 600, 40],
+          // Plataformas flotantes reestructuradas (+40 en Y compensado por el map inferior)
+          [330, 450, 120, 22], [570, 375, 120, 22], [950, 450, 120, 22], [1150, 390, 100, 22],
+          [1780, 450, 80, 22], [2150, 420, 120, 22], [2350, 350, 100, 22], [2550, 420, 80, 22],
+          [2900, 450, 100, 22], [3180, 440, 60, 22], [3250, 360, 60, 22], [3500, 420, 100, 22],
+          [3650, 460, 50, 22], [3720, 380, 50, 22], [4000, 450, 100, 22], [4200, 370, 100, 22]
+        ].map(([x,y,w,h]) => ({x, y: y - 40, w, h})), 
+        
+        // Monedas ubicadas para guiar los saltos
+        coins: [
+          [390, 370], [630, 290], [1010, 370], [1200, 310], [1820, 370], [2210, 340], 
+          [2400, 270], [2590, 340], [2950, 370], [3210, 360], [3280, 280], [3675, 380], 
+          [3745, 300], [4050, 370], [4250, 290]
+        ].map(([x,y]) => ({x,y,r:10,taken:false})),
+        
+        // Más enemigos y un enemigo patrullando en una plataforma alta (2170)
+        enemies: [
+          [480, 430, 140], [850, 430, 100], [1050, 430, 80], [1450, 430, 150], 
+          [2000, 430, 150], [2170, 350, 40], [2400, 430, 80], [2800, 430, 150], 
+          [3400, 430, 80], [3900, 430, 120], [4100, 430, 80]
+        ].map(([x,y,range]) => ({x,y,w:30,h:30,vx:-55,start:x,range,dead:false})),
+        
+        // Power-ups reposicionados a las nuevas plataformas
+        powerups: [
+          {x: 610, y: 311, w: 24, h: 24, type: 'mushroom', taken: false}, 
+          {x: 2380, y: 286, w: 24, h: 24, type: 'star', taken: false}, 
+          {x: 3530, y: 356, w: 24, h: 24, type: 'mushroom', taken: false}
+        ],
+        
+        // Bandera movida al final del nivel ampliado
+        flag: {x: 4800, y: 260, w: 20, h: 200}
+      };
+      document.querySelector('#message').classList.add('hidden');
+      updateHud();
+      cancelAnimationFrame(animation); 
+      last = performance.now(); 
+      animation = requestAnimationFrame(loop);
+    }
+
+    function loop(now) {
+      const dt = Math.min((now - last) / 1000, .033); 
+      last = now;
+      if (game.running) update(dt);
+      draw();
+      if (game.running) animation = requestAnimationFrame(loop);
+    }
+
+    function update(dt) {
+      game.elapsed += dt; 
+      game.time = Math.max(0, 240 - Math.floor(game.elapsed)); // Aumentado el tiempo inicial a 240
+      
+      const p = game.player;
+      const left = keys.arrowleft || keys.a;
+      const right = keys.arrowright || keys.d;
+      const speed = p.star > 0 ? 250 : 180;
+      
+      p.vx = left ? -speed : right ? speed : p.vx * 0.80;
+      
+      if ((keys[' '] || keys.arrowup || keys.w) && p.grounded) { 
+        p.vy = -500; 
+        p.grounded = false; 
+      }
+      
+      p.vy += 1200 * dt; 
+      p.x += p.vx * dt; 
+      p.y += p.vy * dt; 
+      
+      resolvePlatforms(p, dt);
+      
+      p.x = Math.max(0, Math.min(4900, p.x)); // Límite de jugador ampliado
+      if (p.y > H + 60) hurt();
+      
+      for (const c of game.coins) {
+        if (!c.taken && overlap(p, {x: c.x - c.r, y: c.y - c.r, w: c.r * 2, h: c.r * 2})) { 
+          c.taken = true; game.collectedCoins++; game.score += 100; 
+        }
+      }
+      
+      for (const item of game.powerups) {
+        if (!item.taken && overlap(p, item)) { 
+          item.taken = true; 
+          if (item.type === 'mushroom') { p.big = true; p.h = 52; game.score += 1000; } 
+          else { p.star = 8; game.score += 500; } 
+        }
+      }
+      
+      for (const e of game.enemies) {
+        if (e.dead) continue; 
+        e.x += e.vx * dt;
+        if (Math.abs(e.x - e.start) > e.range) e.vx *= -1;
+        
+        if (overlap(p, e)) { 
+          if (p.vy > 0 && (p.y + p.h - p.vy * dt) < e.y + 15) { 
+            e.dead = true; p.vy = -350; game.score += 200; 
+          } else if (p.star > 0) { 
+            e.dead = true; game.score += 200; 
+          } else {
+            hurt(); 
+          }
+        }
+      }
+      
+      if (p.star > 0) p.star = Math.max(0, p.star - dt);
+      if (overlap(p, game.flag)) finish(true);
+      if (game.time <= 0) finish(false, '¡Se acabó el tiempo!');
+      
+      game.camera += (p.x - game.camera - 360) * 0.08; 
+      game.camera = Math.max(0, Math.min(4200, game.camera)); // Límite de cámara ampliado
+      updateHud();
+    }
+
+    function resolvePlatforms(p, dt) {
+      p.grounded = false;
+      for (const b of game.platforms) {
+        if (overlap(p, b)) {
+          const prevBottom = (p.y - p.vy * dt) + p.h;
+          if (p.vy >= 0 && prevBottom <= b.y + 15) { 
+            p.y = b.y - p.h; p.vy = 0; p.grounded = true; 
+          }
+        }
+      }
+    }
+
+    function hurt() { 
+      if (game.player.big) { game.player.big = false; game.player.h = 40; game.player.y -= 12; return; } 
+      finish(false, '¡Te golpearon!'); 
+    }
+
+    function finish(won, text) {
+      if (!game.running) return;
+      if (won) game.score += game.time * 10;
+      game.running = false; game.won = won;
+      const m = document.querySelector('#message');
+      m.innerHTML = `<div>${text || (won ? '¡Nivel completado!' : 'Fin del juego')}<small>Puntos: ${game.score.toString().padStart(6,'0')} · Presiona R para jugar otra vez</small></div>`;
+      m.classList.remove('hidden'); updateHud();
+    }
+
+    function updateHud() { 
+      document.querySelector('#score').textContent = String(game.score).padStart(6,'0'); 
+      document.querySelector('#coins').textContent = String(game.collectedCoins).padStart(2,'0'); 
+      document.querySelector('#time').textContent = String(game.time).padStart(3,'0'); 
+      document.querySelector('#power-status').textContent = game.player.big ? 'Hongo (Grande)' : game.player.star > 0 ? '¡Estrella!' : 'Normal'; 
+    }
+
+    function draw() {
+      rect(0, 0, W, H, '#69c9e8'); const cam = game.camera;
+      drawClouds(cam); drawHills(cam); ctx.save(); ctx.translate(-cam, 0);
+      for (const b of game.platforms) { 
+        rect(b.x, b.y, b.w, b.h, '#87502f'); rect(b.x, b.y, b.w, 7, '#4cb84d'); 
+        for(let x = b.x + 8; x < b.x + b.w; x += 28) { rect(x, b.y + 12, 12, 8, '#a5653b'); rect(x + 13, b.y + 25, 12, 8, '#6e3d2c'); } 
+      }
+      for (const c of game.coins) {
+        if (!c.taken) { ctx.fillStyle = '#ffd447'; ctx.beginPath(); ctx.ellipse(c.x, c.y, 7, 11, 0, 0, Math.PI*2); ctx.fill(); rect(c.x - 2, c.y - 7, 4, 14, '#fff09c'); }
+      }
+      for (const item of game.powerups) if (!item.taken) drawPowerup(item);
+      for (const e of game.enemies) {
+        if (!e.dead) { 
+          rect(e.x, e.y + 8, e.w, e.h - 8, '#b84b36'); ctx.fillStyle = '#f3a657'; ctx.beginPath(); ctx.arc(e.x + 15, e.y + 9, 15, Math.PI, 0); ctx.fill(); 
+          rect(e.x + 6, e.y + 9, 5, 7, '#241b2d'); rect(e.x + 20, e.y + 9, 5, 7, '#241b2d'); rect(e.x + 3, e.y + 27, 10, 4, '#f6e2b3'); rect(e.x + 18, e.y + 27, 10, 4, '#f6e2b3'); 
+        }
+      }
+      drawFlag(); drawPlayer(); ctx.restore();
+    }
+
+    function drawPlayer() { 
+      const p = game.player; const color = p.star > 0 ? (Math.floor(game.elapsed * 12) % 2 ? '#fff06a' : '#ff6b6b') : '#e84b4b'; 
+      rect(p.x, p.y, p.w, p.h, color); rect(p.x + 4, p.y + 9, p.w - 8, 10, '#f3b166'); rect(p.x + 2, p.y - 4, p.w - 4, 7, '#66364a'); 
+      rect(p.x + 5, p.y + 20, 7, 5, '#241b2d'); rect(p.x + p.w - 12, p.y + 20, 7, 5, '#241b2d'); rect(p.x + 3, p.y + p.h - 3, 9, 5, '#43304b'); rect(p.x + p.w - 12, p.y + p.h - 3, 9, 5, '#43304b'); 
+    }
+
+    function drawPowerup(i) { 
+      if (i.type === 'mushroom') { 
+        ctx.fillStyle = '#e94d4d'; ctx.beginPath(); ctx.arc(i.x + 12, i.y + 12, 12, Math.PI, 0); ctx.fill();
+        rect(i.x + 3, i.y + 12, 18, 12, '#f1bd72'); rect(i.x + 6, i.y + 17, 4, 5, '#241b2d'); rect(i.x + 15, i.y + 17, 4, 5, '#241b2d'); 
+      } else { 
+        ctx.fillStyle = '#ffe35c'; ctx.beginPath(); 
+        for(let n = 0; n < 10; n++) { let a = -Math.PI / 2 + n * Math.PI / 5, r = n % 2 ? 6 : 13; ctx.lineTo(i.x + 12 + Math.cos(a) * r, i.y + 12 + Math.sin(a) * r); } ctx.fill(); 
+      } 
+    }
+
+    function drawFlag() { 
+      const f = game.flag; rect(f.x, f.y, 7, f.h, '#f7f1d1'); ctx.fillStyle = '#f05a55';
+      ctx.beginPath(); ctx.moveTo(f.x + 7, f.y + 8); ctx.lineTo(f.x + 55, f.y + 25); ctx.lineTo(f.x + 7, f.y + 42); ctx.fill(); 
+    }
+
+    function drawClouds(cam) { 
+      // Se añadieron más nubes para cubrir el nuevo tamaño del mapa
+      for(const x of [150, 650, 1220, 1900, 2600, 3200, 3900, 4600]) { 
+        const px = x - cam * 0.25; ctx.fillStyle = '#f7f1e1'; 
+        ctx.beginPath(); ctx.arc(px, 100, 24, 0, Math.PI * 2); ctx.arc(px + 27, 92, 32, 0, Math.PI * 2); ctx.arc(px + 60, 103, 22, 0, Math.PI * 2); ctx.fill(); 
+      } 
+    }
+
+    function drawHills(cam) { 
+      // Se añadieron más montañas para cubrir el nuevo tamaño del mapa
+      for(const x of [0, 850, 1800, 2750, 3700, 4600]) { 
+        const px = x - cam * 0.5; ctx.fillStyle = '#53b69a'; ctx.beginPath(); ctx.moveTo(px, 500); ctx.lineTo(px + 170, 290); ctx.lineTo(px + 350, 500); ctx.fill();
+        ctx.fillStyle = '#3c987e'; ctx.beginPath(); ctx.moveTo(px + 260, 500); ctx.lineTo(px + 420, 345); ctx.lineTo(px + 600, 500); ctx.fill(); 
+      } 
+    }
+
+    reset();
+  </script>
+</body>
+</html>
